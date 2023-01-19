@@ -1,14 +1,13 @@
-﻿using static System.Net.Mime.MediaTypeNames;
+﻿namespace GitPull;
 
-namespace GitPull;
 internal static class Program
 {
-    /// <summary>
-    ///  The main entry point for the application.
-    /// </summary>
+    internal static PathSetting PathSetting = new();
+
     [STAThread]
-    static void Main(string[] args)
+    private static void Main(string[] args)
     {
-        MainClass mainClass = new MainClass();
+        PathSetting = PathSetting.Load();
+        MainClass.CallMe();
     }
 }

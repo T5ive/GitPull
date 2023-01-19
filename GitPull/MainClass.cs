@@ -1,28 +1,29 @@
-﻿using LibGit2Sharp;
-using System.Diagnostics;
-using System.Text;
-
-namespace GitPull;
+﻿namespace GitPull;
 
 public class MainClass
 {
-    private static ListInfo _path = new();
     private static bool _up2date;
     private static StringBuilder _logs = new();
-    public MainClass()
+
+    public static void CallMe()
     {
-        UpdatePatch();
-        //Console.Write("Enter Y for Pull: ");
-        //var result = Console.ReadKey();
-        //Console.WriteLine("");
         Console.Write("Enter Y for show UpToDate: ");
         var up2date = Console.ReadKey();
         if (up2date.Key == ConsoleKey.Y)
             _up2date = true;
-        //if (result.Key != ConsoleKey.Y) return;
         Console.WriteLine("");
         Console.Clear();
+
+        var sw = new Stopwatch();
+        sw.Start();
         PullThemAll();
+        sw.Stop();
+
+        Console.WriteLine("================= Done =================");
+        Console.WriteLine(ToTime(sw.Elapsed));
+        Console.WriteLine("========================================");
+
+        Console.ReadKey();
     }
 
     private static void PullThemAll()
@@ -43,42 +44,51 @@ public class MainClass
             }
             foreach (var path in paths)
             {
-                min++;
-                Console.Title = $"In process {min}/{max}";
-                var result = GitPull(path);
-                if (result == null)
+                try
                 {
-                    Debug.WriteLine("It's null");
-                    continue;
-                }
+                    min++;
+                    Console.Title = $"In process {min}/{max}";
+                    var result = GitPull(path);
+                    if (result == null)
+                    {
+                        Debug.WriteLine("It's null");
+                        continue;
+                    }
 
-                if (result.Status == MergeStatus.FastForward)
-                {
-                    if (!header)
+                    if (result.Status == MergeStatus.FastForward)
                     {
-                        WriteOutput("================= " + paths[0] + " =================");
-                        header = true;
+                        if (!header)
+                        {
+                            WriteOutput("================= " + paths[0] + " =================");
+                            header = true;
+                        }
+                        WriteOutput(path);
+                        WriteOutput(result.Status);
+                        WriteOutput(result.Commit);
+                        WriteOutput("");
                     }
-                    WriteOutput(path);
-                    WriteOutput(result.Status);
-                    WriteOutput(result.Commit);
-                    WriteOutput("");
-                }
-                else if (result.Status == MergeStatus.UpToDate && !_up2date)
-                {
-                    Debug.WriteLine(path);
-                    Debug.WriteLine(result.Status);
-                }
-                else
-                {
-                    if (!header)
+                    else if (result.Status == MergeStatus.UpToDate && !_up2date)
                     {
-                        WriteOutput("================= " + paths[0] + " =================");
-                        header = true;
+                        Debug.WriteLine(path);
+                        Debug.WriteLine(result.Status);
                     }
-                    WriteOutput(path);
-                    WriteOutput(result.Status);
-                    WriteOutput(result.Commit);
+                    else
+                    {
+                        if (!header)
+                        {
+                            WriteOutput("================= " + paths[0] + " =================");
+                            header = true;
+                        }
+                        WriteOutput(path);
+                        WriteOutput(result.Status);
+                        WriteOutput(result.Commit);
+                        WriteOutput("");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteOutput($"Error at {path} - In Process {min}");
+                    WriteOutput(ex.Message);
                     WriteOutput("");
                 }
             }
@@ -121,7 +131,15 @@ public class MainClass
     {
         try
         {
-            var repo = new Repository(path);
+            using var repo = new Repository(path);
+            foreach (Submodule submodule in repo.Submodules)
+            {
+                var subrepoPath = Path.Combine(repo.Info.WorkingDirectory, submodule.Path);
+
+                using var subRepo = new Repository(subrepoPath);
+                Branch remoteBranch = subRepo.Branches["origin/master"];
+                subRepo.Reset(ResetMode.Hard, remoteBranch.Tip);
+            }
             var signature = repo.Config.BuildSignature(DateTimeOffset.Now);
             var pullResult = Commands.Pull(repo, signature, new PullOptions());
             return pullResult;
@@ -132,76 +150,9 @@ public class MainClass
         }
     }
 
-    private static void UpdatePatch() // Config Path
-    {
-        _path.PathInfo = new List<PathInfo>
-            {
-                new()
-                {
-                    Path = @"D:\Android",
-                    Depth = 0
-                },
-                new()
-                {
-                    Path = @"D:\Github\#Android",
-                    Depth = 1
-                },
-                new()
-                {
-                    Path = @"D:\Github\#C-Sharp",
-                    Depth = 1
-                },
-                new()
-                {
-                    Path = @"D:\Github\#Deobfuscator",
-                    Depth = 1
-                },
-                new()
-                {
-                    Path = @"D:\Github\#Games",
-                    Depth = 1
-                },
-                new()
-                {
-                    Path = @"D:\Github\#Injector",
-                    Depth = 1
-                },
-                new()
-                {
-                    Path = @"D:\Github\#Maple\#Cheat",
-                    Depth = 0
-                },
-                new()
-                {
-                    Path = @"D:\Github\#Maple\#Old",
-                    Depth = 0
-                },
-                new()
-                {
-                    Path = @"D:\Github\#Memory",
-                    Depth = 1
-                },
-                new()
-                {
-                    Path = @"D:\Github\#Protector",
-                    Depth = 1
-                },
-                new()
-                {
-                    Path=@"D:\Github\#RO\#rAthenaServer",
-                    Depth = 0
-                },
-                new()
-                {
-                    Path = @"D:\Github",
-                    Depth = 1
-                }
-            };
-    }
-
     private static List<List<string>> GetPath()
     {
-        return (from t in _path.PathInfo where !t.Path.Contains("#Remove") select GetDirectory(t.Path, t.Depth, true)).ToList();
+        return (from t in Program.PathSetting.PathInfo where Directory.Exists(t.Path) select GetDirectory(t.Path, t.Depth, true)).ToList();
     }
 
     private static List<string> GetDirectory(string root, int depth, bool except)
@@ -229,22 +180,85 @@ public class MainClass
 
     private static bool IsExcept(string directory)
     {
-        if (directory.Contains("#Archived") || directory.Contains("#Remove") || directory.Contains("#My Project") || directory.EndsWith("Logs"))
+        return directory.Contains("#Archived") || directory.Contains("#Remove") || directory.Contains("#My Project") || directory.EndsWith("Logs");
+    }
+
+    //https://stackoverflow.com/a/4423615
+    private static string ToTime(TimeSpan span)
+    {
+        var day = span.Duration().Days > 0
+            ? $"{span.Days:0} day{(span.Days == 1 ? string.Empty : "s")}, "
+            : string.Empty;
+
+        var hours = span.Duration().Hours > 0
+            ? $"{span.Hours:0} hour{(span.Hours == 1 ? string.Empty : "s")}, "
+            : string.Empty;
+
+        var min = span.Duration().Minutes > 0
+            ? $"{span.Minutes:0} minute{(span.Minutes == 1 ? string.Empty : "s")}, "
+            : string.Empty;
+
+        var sec = span.Duration().Seconds > 0
+            ? $"{span.Seconds:0} second{(span.Seconds == 1 ? string.Empty : "s")}"
+            : string.Empty;
+
+        var ms = span.Duration().Milliseconds > 0
+            ? $"{span.Milliseconds:0} ms{(span.Milliseconds == 1 ? string.Empty : "ms")}"
+            : string.Empty;
+
+        var formatted = day + hours + min + sec;
+
+        if (formatted.EndsWith(", ")) formatted = formatted[..^2];
+
+        if (string.IsNullOrEmpty(formatted)) formatted = "0 seconds";
+
+        return formatted;
+    }
+
+    private static string ToTimeOld(TimeSpan time)
+    {
+        var result = "";
+        var type = 0;
+
+        if (time.TotalHours > 0)
         {
-            return true;
+            result += time.TotalHours + ":";
+            type = 3;
         }
 
-        return false;
+        if (time.TotalMinutes > 0)
+        {
+            result += time.TotalMinutes + ":";
+            if (type == 0)
+                type = 2;
+        }
+
+        if (time.Seconds > 0)
+        {
+            result += time.TotalSeconds;
+            if (type == 0)
+                type = 1;
+        }
+
+        switch (type)
+        {
+            case 3:
+                result += " hr";
+                break;
+
+            case 2:
+                result += " min";
+                break;
+
+            case 1:
+                result += " sec";
+                break;
+
+            case 0:
+                result += time.TotalMilliseconds + " ms";
+                break;
+        }
+
+        return result;
     }
-}
-
-public class PathInfo
-{
-    public string Path { get; set; }
-    public int Depth { get; set; }
-}
-
-public class ListInfo
-{
-    public List<PathInfo> PathInfo { get; set; }
 }
